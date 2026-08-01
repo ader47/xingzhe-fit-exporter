@@ -13,6 +13,7 @@ import math
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 from xml.etree import ElementTree as ET
 
 from playwright.sync_api import sync_playwright
@@ -92,6 +93,21 @@ def coordinate_points(payload: object) -> list[tuple[float, float]]:
             if key in payload:
                 points.extend(coordinate_points(payload[key]))
     return points
+
+
+def relative_komoot_api_path(url: object) -> str | None:
+    """Use Komoot's same-origin API proxy so browser session cookies apply."""
+    if not isinstance(url, str):
+        return None
+    parts = urlsplit(url)
+    path = parts.path
+    # Links in the response point at api.komoot.de/v007/... while the signed-in
+    # web origin exposes the same endpoint under /api/v007/....
+    if path.startswith("/v007/"):
+        path = "/api" + path
+    if not path.startswith("/api/"):
+        return None
+    return path + (f"?{parts.query}" if parts.query else "")
 
 
 def tour_start(tour: dict) -> datetime | None:
@@ -210,24 +226,25 @@ def main() -> None:
             page_info = payload.get("page", {}) if isinstance(payload, dict) else {}
             if not current or number + 1 >= int(page_info.get("totalPages", number + 1)):
                 break
-        coordinate_paths = [
-            tour.get("_links", {}).get("coordinates", {}).get("href")
-            for tour in tours
-        ]
+        coordinate_paths = [relative_komoot_api_path(
+            tour.get("_links", {}).get("coordinates", {}).get("href")) for tour in tours]
         coordinates_read = 0
+        coordinate_statuses: dict[str, int] = {}
         # Fetching the compact route coordinates is read-only and allows us to
         # distinguish rides sharing the same start point and distance.
         for offset in range(0, len(tours), 20):
             batch = coordinate_paths[offset:offset + 20]
             payloads = page.evaluate("""async urls => Promise.all(urls.map(async url => {
-                if (!url) return null;
+                if (!url) return {status: 0, payload: null};
                 try {
                     const response = await fetch(url, {credentials: 'include'});
-                    return response.ok ? await response.json() : null;
-                } catch (_) { return null; }
+                    return {status: response.status, payload: response.ok ? await response.json() : null};
+                } catch (_) { return {status: -1, payload: null}; }
             }))""", batch)
-            for tour, payload in zip(tours[offset:offset + 20], payloads):
-                points = coordinate_points(payload)
+            for tour, response in zip(tours[offset:offset + 20], payloads):
+                status = str(response.get("status", -1))
+                coordinate_statuses[status] = coordinate_statuses.get(status, 0) + 1
+                points = coordinate_points(response.get("payload"))
                 if points:
                     lat, lng = points[-1]
                     tour["_reconcile_end_point"] = {"lat": lat, "lng": lng}
@@ -268,6 +285,7 @@ def main() -> None:
         source = Path(row["fit"])
         shutil.copy2(source, missing_dir / source.name)
     report = {"local_fits": len(fits), "komoot_tours_read": len(tours), "komoot_coordinates_read": coordinates_read,
+              "komoot_coordinate_response_statuses": coordinate_statuses,
               "matched": matched, "missing": missing, "unknown": unknown}
     (args.out / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
     # Useful for diagnosing future Komoot API changes.  This remains local:
