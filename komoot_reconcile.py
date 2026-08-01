@@ -113,6 +113,35 @@ def route_candidates(signature: dict, tours: list[dict]) -> list[tuple[float, in
     return sorted(candidates)
 
 
+def globally_match_routes(signatures: list[dict], tours: list[dict]) -> dict[int, tuple[float, int]]:
+    """Find a maximum-cardinality one-to-one set of local/remote route pairs.
+
+    Several rides can leave the same location with a similar distance.  A
+    nearest-first assignment can then strand an otherwise valid route.  The
+    augmenting-path assignment below maximizes the number of matches while
+    retaining the score-ordered candidates for deterministic tie-breaking.
+    """
+    candidates = [route_candidates(signature, tours) for signature in signatures]
+    remote_to_local: dict[int, tuple[int, float]] = {}
+
+    def assign(local_index: int, visited: set[int]) -> bool:
+        for score, remote_index in candidates[local_index]:
+            if remote_index in visited:
+                continue
+            visited.add(remote_index)
+            previous = remote_to_local.get(remote_index)
+            if previous is None or assign(previous[0], visited):
+                remote_to_local[remote_index] = (local_index, score)
+                return True
+        return False
+
+    # Routes with fewer alternatives go first, reducing arbitrary tie effects.
+    for local_index in sorted(range(len(signatures)), key=lambda index: len(candidates[index])):
+        assign(local_index, set())
+    return {local_index: (score, remote_index)
+            for remote_index, (local_index, score) in remote_to_local.items()}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Find locally exported FIT files missing from Komoot.")
     parser.add_argument("--user-id", required=True, help="numeric ID in your komoot.com/user/USER_ID profile URL")
@@ -156,10 +185,9 @@ def main() -> None:
         browser.close()
 
     # Imported activities receive Komoot's import date, not the original ride
-    # date.  Reserve matching tours as we go so a single remote activity cannot
-    # incorrectly satisfy two local files.
+    # date.  Build all route signatures before making global one-to-one matches.
     missing, matched, unknown = [], [], []
-    used_tours: set[int] = set()
+    usable: list[tuple[Path, dict]] = []
     for fit in fits:
         ride_id = fit.stem
         gpx = args.source_folder / ride_id / f"{ride_id}.gpx"
@@ -170,10 +198,12 @@ def main() -> None:
         if signature is None:
             unknown.append({"fit": str(fit), "reason": "GPX has no usable track points"})
             continue
-        candidates = [(score, index) for score, index in route_candidates(signature, tours) if index not in used_tours]
-        if candidates:
-            score, index = candidates[0]
-            used_tours.add(index)
+        usable.append((fit, signature))
+
+    chosen = globally_match_routes([signature for _, signature in usable], tours)
+    for local_index, (fit, signature) in enumerate(usable):
+        if local_index in chosen:
+            score, index = chosen[local_index]
             matched.append({"fit": str(fit), "tour_id": tours[index].get("id"), "score_m": round(score, 1)})
         else:
             missing.append({"fit": str(fit), "distance_m": round(signature["distance"], 1)})
