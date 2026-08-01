@@ -12,7 +12,9 @@ from pathlib import Path
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 KOMOOT = "https://www.komoot.com/"
-IMPORT_LABEL = re.compile(r"(import.*gps|gps.*import|导入.*gps|导入.*文件)", re.I)
+# Komoot's current activity page shortens this button to simply "Import" in
+# some layouts; the older layout says "Import a GPS file".
+IMPORT_LABEL = re.compile(r"^(import|导入)$|(import.*gps|gps.*import|导入.*gps|导入.*文件)", re.I)
 AS_ACTIVITY = re.compile(r"(import as activity|作为活动导入|导入为活动)", re.I)
 FINAL_IMPORT = re.compile(r"^(import activity|import|导入活动|导入)$", re.I)
 PUBLIC = re.compile(r"^(public|everyone|公开|所有人可见)$", re.I)
