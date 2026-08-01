@@ -12,6 +12,7 @@ from pathlib import Path
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 KOMOOT = "https://www.komoot.com/"
+KOMOOT_UPLOAD = "https://www.komoot.com/upload"
 # Komoot's current activity page shortens this button to simply "Import" in
 # some layouts; the older layout says "Import a GPS file".
 IMPORT_LABEL = re.compile(r"^(import|导入)$|(import.*gps|gps.*import|导入.*gps|导入.*文件)", re.I)
@@ -79,7 +80,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--no-prompt", action="store_true")
-    parser.add_argument("--import-url", help="your Komoot Completed activities page URL; useful with --no-prompt")
+    parser.add_argument("--import-url", default=KOMOOT_UPLOAD,
+                        help="Komoot upload page (default: https://www.komoot.com/upload)")
     args = parser.parse_args()
 
     files = sorted(args.folder.expanduser().glob("*.fit"))
@@ -109,15 +111,15 @@ def main() -> None:
         page = browser.pages[0]
         page.goto(KOMOOT, wait_until="domcontentloaded")
         if not args.no_prompt:
-            input("Log in, open Profile > Completed activities, then press Enter here. ")
-        import_page_url = args.import_url or page.url
+            input("Log in to Komoot in the browser, then press Enter here. ")
+        import_page_url = args.import_url
         # Validate the page before sending any FIT data. This avoids mistaking
         # Komoot's home page for an import form.
         page.goto(import_page_url, wait_until="domcontentloaded")
         if not click_first(page, IMPORT_LABEL):
             browser.close()
-            raise RuntimeError("Open Profile > Completed activities in the browser, then press Enter. "
-                               "The current page does not contain 'Import a GPS file'.")
+            raise RuntimeError("Komoot's upload page did not show an import control after login. "
+                               "Confirm that you are signed in, then retry.")
         for index, fit in enumerate(files, 1):
             try:
                 upload_one(page, import_page_url, fit, args.privacy)
