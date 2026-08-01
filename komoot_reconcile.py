@@ -82,7 +82,11 @@ def main() -> None:
             input("Log in to Komoot in the browser if needed, then press Enter. ")
         tours: list[dict] = []
         for number in range(100):
-            path = f"/api/v007/users/{args.user_id}/tours/?verified=true&limit=100&page={number}"
+            # Do not use ``verified=true`` here.  That endpoint filter is for
+            # verified/planned tours and excludes FIT activities imported by
+            # the user.  Fetch the user's full tour history instead; the exact
+            # start-time match below identifies the local completed activities.
+            path = f"/api/v007/users/{args.user_id}/tours/?limit=100&page={number}"
             payload = page.evaluate("""async path => {
                 const response = await fetch(path, {credentials: 'include'});
                 if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
@@ -116,14 +120,23 @@ def main() -> None:
         else:
             missing.append({"fit": str(fit), "start": start.isoformat()})
 
+    # Keep the generated upload folder an exact reflection of this run.  A
+    # previous report may have contained files that are no longer missing.
     missing_dir = args.out / "missing-fits"
     missing_dir.mkdir(exist_ok=True)
+    for old_fit in missing_dir.glob("*.fit"):
+        old_fit.unlink()
     for row in missing:
         source = Path(row["fit"])
         shutil.copy2(source, missing_dir / source.name)
     report = {"local_fits": len(fits), "komoot_tours_read": len(tours),
               "matched": matched, "missing": missing, "unknown": unknown}
     (args.out / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
+    # Useful for diagnosing future Komoot API changes.  This remains local:
+    # the reconciliation directory is intentionally ignored by Git.
+    (args.out / "komoot-tours-raw.json").write_text(
+        json.dumps(tours, ensure_ascii=False, indent=2)
+    )
     print(f"Komoot tours read: {len(tours)}")
     print(f"Matched locally: {len(matched)}")
     print(f"Missing FIT files: {len(missing)}")
