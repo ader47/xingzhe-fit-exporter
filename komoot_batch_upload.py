@@ -61,15 +61,25 @@ def upload_file_input(page: Page):
         return file_input(page)
 
 
+def click_label(page: Page, pattern: re.Pattern[str], timeout: int = 5000) -> bool:
+    """Click a Komoot label/card as soon as it becomes visible."""
+    deadline = time.monotonic() + timeout / 1000
+    label = page.locator("label").filter(has_text=pattern)
+    while time.monotonic() < deadline:
+        try:
+            if label.count() and label.first.is_visible():
+                label.first.click(timeout=400)
+                return True
+        except PlaywrightTimeoutError:
+            pass
+        page.wait_for_timeout(100)
+    return False
+
+
 def choose_activity(page: Page) -> bool:
     """Select the actual label/card shown in the current import flow."""
-    label = page.locator("label").filter(has_text=AS_ACTIVITY)
-    try:
-        if label.count() and label.first.is_visible():
-            label.first.click(timeout=600)
-            return True
-    except PlaywrightTimeoutError:
-        pass
+    if click_label(page, AS_ACTIVITY, timeout=10000):
+        return True
     return click_first(page, AS_ACTIVITY, timeout=10000)
 
 
@@ -90,23 +100,11 @@ def set_privacy(page: Page, privacy: str) -> None:
     except PlaywrightTimeoutError as exc:
         raise RuntimeError("Could not open Komoot's Activity visibility setting.") from exc
     desired = PUBLIC if privacy == "public" else PRIVATE
-    label = page.locator("label").filter(has_text=desired)
-    try:
-        if label.count() and label.first.is_visible():
-            label.first.click(timeout=800)
-            return
-    except PlaywrightTimeoutError:
-        pass
-    for role in ("radio", "button"):
-        try:
-            page.get_by_role(role, name=desired).first.click(timeout=4000)
-            return
-        except PlaywrightTimeoutError:
-            pass
-    try:
-        page.get_by_text(desired, exact=False).first.click(timeout=4000)
-    except PlaywrightTimeoutError as exc:
-        raise RuntimeError(f"Could not find the Komoot {privacy!r} privacy control.") from exc
+    if click_label(page, desired):
+        return
+    if click_first(page, desired):
+        return
+    raise RuntimeError(f"Could not find the Komoot {privacy!r} privacy control.")
 
 
 def upload_one(page: Page, import_page_url: str, fit: Path, privacy: str, settle: float) -> None:
