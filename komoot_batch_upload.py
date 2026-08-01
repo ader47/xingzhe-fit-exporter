@@ -13,9 +13,7 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sy
 
 KOMOOT = "https://www.komoot.com/"
 KOMOOT_UPLOAD = "https://www.komoot.com/upload"
-# Komoot's current activity page shortens this button to simply "Import" in
-# some layouts; the older layout says "Import a GPS file".
-IMPORT_LABEL = re.compile(r"^(import|导入)$|(import.*gps|gps.*import|导入.*gps|导入.*文件)", re.I)
+UPLOAD_FILE = re.compile(r"^(upload file|上传文件)$", re.I)
 AS_ACTIVITY = re.compile(r"(import as activity|作为活动导入|导入为活动)", re.I)
 NEXT = re.compile(r"^(next|下一步)$", re.I)
 FINAL_IMPORT = re.compile(r"^(import activity|import|导入活动|导入)$", re.I)
@@ -47,10 +45,32 @@ def click_first(page: Page, pattern: re.Pattern[str], timeout: int = 5000) -> bo
     return False
 
 
-def file_input(page: Page):
+def file_input(page: Page, timeout: int = 1000):
     locator = page.locator('input[type="file"]')
-    locator.first.wait_for(state="attached", timeout=8000)
+    locator.first.wait_for(state="attached", timeout=timeout)
     return locator.first
+
+
+def upload_file_input(page: Page):
+    """Find the upload input; click Komoot's real upload button if needed."""
+    try:
+        return file_input(page)
+    except PlaywrightTimeoutError:
+        if not click_first(page, UPLOAD_FILE):
+            raise RuntimeError("Komoot did not show the Upload File control.")
+        return file_input(page)
+
+
+def choose_activity(page: Page) -> bool:
+    """Select the actual label/card shown in the current import flow."""
+    label = page.locator("label").filter(has_text=AS_ACTIVITY)
+    try:
+        if label.count() and label.first.is_visible():
+            label.first.click(timeout=600)
+            return True
+    except PlaywrightTimeoutError:
+        pass
+    return click_first(page, AS_ACTIVITY, timeout=10000)
 
 
 def set_privacy(page: Page, privacy: str) -> None:
@@ -70,6 +90,13 @@ def set_privacy(page: Page, privacy: str) -> None:
     except PlaywrightTimeoutError as exc:
         raise RuntimeError("Could not open Komoot's Activity visibility setting.") from exc
     desired = PUBLIC if privacy == "public" else PRIVATE
+    label = page.locator("label").filter(has_text=desired)
+    try:
+        if label.count() and label.first.is_visible():
+            label.first.click(timeout=800)
+            return
+    except PlaywrightTimeoutError:
+        pass
     for role in ("radio", "button"):
         try:
             page.get_by_role(role, name=desired).first.click(timeout=4000)
@@ -85,14 +112,8 @@ def set_privacy(page: Page, privacy: str) -> None:
 def upload_one(page: Page, import_page_url: str, fit: Path, privacy: str, settle: float) -> None:
     """Upload one activity from the already-confirmed Completed activities page."""
     page.goto(import_page_url, wait_until="domcontentloaded")
-    if not click_first(page, IMPORT_LABEL):
-        try:
-            file_input(page)
-        except PlaywrightTimeoutError as exc:
-            raise RuntimeError("Could not find Komoot's 'Import a GPS file' control. "
-                               "Check that you are signed in and use Komoot in English.") from exc
-    file_input(page).set_input_files(str(fit.resolve()))
-    if not click_first(page, AS_ACTIVITY, timeout=10000):
+    upload_file_input(page).set_input_files(str(fit.resolve()))
+    if not choose_activity(page):
         raise RuntimeError("Komoot did not show the 'Import as Activity' step.")
     if not click_first(page, NEXT, timeout=5000):
         raise RuntimeError("Komoot did not show the Next button after selecting 'Import as Activity'.")
@@ -157,17 +178,13 @@ def main() -> None:
             if not args.no_prompt:
                 input("Log in to Komoot in the browser, then press Enter here. ")
             import_page_url = args.import_url
-            # Validate the page before sending any FIT data. This avoids mistaking
-            # Komoot's home page for an import form.
+            # Validate the page before sending any FIT data.
             page.goto(import_page_url, wait_until="domcontentloaded")
-            if not click_first(page, IMPORT_LABEL):
-                try:
-                    # On /upload Komoot may render the file input directly, without
-                    # a separately labelled Import button.
-                    file_input(page)
-                except PlaywrightTimeoutError:
-                    raise RuntimeError("Komoot's upload page did not show an import control after login. "
-                                       "Confirm that you are signed in, then retry.")
+            try:
+                upload_file_input(page)
+            except PlaywrightTimeoutError:
+                raise RuntimeError("Komoot's upload page did not show an import control after login. "
+                                   "Confirm that you are signed in, then retry.")
             for index, fit in enumerate(files, 1):
                 try:
                     upload_one(page, import_page_url, fit, args.privacy, args.settle)
