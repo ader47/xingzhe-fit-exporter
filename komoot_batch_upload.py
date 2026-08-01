@@ -24,18 +24,26 @@ PRIVATE = re.compile(r"^(private|only me|only you|仅自己|私密)$", re.I)
 
 
 def click_first(page: Page, pattern: re.Pattern[str], timeout: int = 5000) -> bool:
-    for locator in (page.get_by_role("button", name=pattern), page.get_by_role("link", name=pattern)):
-        try:
-            locator.first.click(timeout=timeout)
-            return True
-        except PlaywrightTimeoutError:
-            pass
-    # Import choices are cards in Komoot's current UI, without button roles.
-    try:
-        page.get_by_text(pattern, exact=True).first.click(timeout=timeout)
-        return True
-    except PlaywrightTimeoutError:
-        pass
+    """Click whichever Komoot control appears, without serial 5-second waits.
+
+    The activity choice is a card (plain text), while Next and Import Activity
+    are buttons.  Probing each kind with a full timeout made every import wait
+    10--20 seconds after the page had visibly loaded.
+    """
+    deadline = time.monotonic() + timeout / 1000
+    while time.monotonic() < deadline:
+        for locator in (
+            page.get_by_role("button", name=pattern),
+            page.get_by_role("link", name=pattern),
+            page.get_by_text(pattern, exact=True),
+        ):
+            try:
+                if locator.count() and locator.first.is_visible():
+                    locator.first.click(timeout=400)
+                    return True
+            except PlaywrightTimeoutError:
+                pass
+        page.wait_for_timeout(100)
     return False
 
 
