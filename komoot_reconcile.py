@@ -76,6 +76,24 @@ def tours_from(payload: object) -> list[dict]:
     return []
 
 
+def coordinate_points(payload: object) -> list[tuple[float, float]]:
+    """Extract latitude/longitude points from Komoot's coordinates response."""
+    points: list[tuple[float, float]] = []
+    if isinstance(payload, list):
+        for item in payload:
+            points.extend(coordinate_points(item))
+    elif isinstance(payload, dict):
+        try:
+            if "lat" in payload and "lng" in payload:
+                points.append((float(payload["lat"]), float(payload["lng"])))
+        except (TypeError, ValueError):
+            pass
+        for key in ("items", "coordinates", "features", "_embedded"):
+            if key in payload:
+                points.extend(coordinate_points(payload[key]))
+    return points
+
+
 def tour_start(tour: dict) -> datetime | None:
     for key in ("date", "start_date", "start_time", "timestamp", "time"):
         value = tour.get(key)
@@ -89,10 +107,10 @@ def route_candidates(signature: dict, tours: list[dict]) -> list[tuple[float, in
     """Find Komoot tours that plausibly describe this recorded GPX route.
 
     Komoot assigns a newly-imported activity its import time in ``date``.  The
-    durable comparison fields on the activity-list endpoint are the start
-    coordinate and total distance, so use both and retain only tight matches.
+    durable comparison fields are the start/end coordinates and total distance.
     """
     start_lat, start_lon = signature["start"]
+    end_lat, end_lon = signature["end"]
     local_distance = signature["distance"]
     candidates: list[tuple[float, int]] = []
     for index, tour in enumerate(tours):
@@ -105,9 +123,19 @@ def route_candidates(signature: dict, tours: list[dict]) -> list[tuple[float, in
         except (KeyError, TypeError, ValueError):
             continue
         distance_gap = abs(local_distance - remote_distance)
-        # A GPS point can drift slightly and Komoot may simplify the line, but
-        # larger differences are ambiguous rather than safe matches.
-        if start_gap <= 250 and distance_gap <= max(250, local_distance * 0.03):
+        end_point = tour.get("_reconcile_end_point")
+        if isinstance(end_point, dict):
+            try:
+                end_gap = haversine_meters(end_lat, end_lon, float(end_point["lat"]), float(end_point["lng"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+            # Matching both endpoints makes a slightly wider distance allowance
+            # safe for routes that Komoot simplified during import.
+            if start_gap <= 500 and end_gap <= 500 and distance_gap <= max(500, local_distance * 0.08):
+                score = start_gap + end_gap + distance_gap
+                candidates.append((score, index))
+        # Fallback for an unavailable coordinates response remains conservative.
+        elif start_gap <= 250 and distance_gap <= max(250, local_distance * 0.03):
             score = start_gap + distance_gap
             candidates.append((score, index))
     return sorted(candidates)
@@ -182,6 +210,28 @@ def main() -> None:
             page_info = payload.get("page", {}) if isinstance(payload, dict) else {}
             if not current or number + 1 >= int(page_info.get("totalPages", number + 1)):
                 break
+        coordinate_paths = [
+            tour.get("_links", {}).get("coordinates", {}).get("href")
+            for tour in tours
+        ]
+        coordinates_read = 0
+        # Fetching the compact route coordinates is read-only and allows us to
+        # distinguish rides sharing the same start point and distance.
+        for offset in range(0, len(tours), 20):
+            batch = coordinate_paths[offset:offset + 20]
+            payloads = page.evaluate("""async urls => Promise.all(urls.map(async url => {
+                if (!url) return null;
+                try {
+                    const response = await fetch(url, {credentials: 'include'});
+                    return response.ok ? await response.json() : null;
+                } catch (_) { return null; }
+            }))""", batch)
+            for tour, payload in zip(tours[offset:offset + 20], payloads):
+                points = coordinate_points(payload)
+                if points:
+                    lat, lng = points[-1]
+                    tour["_reconcile_end_point"] = {"lat": lat, "lng": lng}
+                    coordinates_read += 1
         browser.close()
 
     # Imported activities receive Komoot's import date, not the original ride
@@ -217,7 +267,7 @@ def main() -> None:
     for row in missing:
         source = Path(row["fit"])
         shutil.copy2(source, missing_dir / source.name)
-    report = {"local_fits": len(fits), "komoot_tours_read": len(tours),
+    report = {"local_fits": len(fits), "komoot_tours_read": len(tours), "komoot_coordinates_read": coordinates_read,
               "matched": matched, "missing": missing, "unknown": unknown}
     (args.out / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
     # Useful for diagnosing future Komoot API changes.  This remains local:
@@ -226,6 +276,7 @@ def main() -> None:
         json.dumps(tours, ensure_ascii=False, indent=2)
     )
     print(f"Komoot tours read: {len(tours)}")
+    print(f"Komoot route coordinate sets read: {coordinates_read}")
     print(f"Matched locally: {len(matched)}")
     print(f"Missing FIT files: {len(missing)}")
     print(f"Missing FIT folder: {missing_dir}")
