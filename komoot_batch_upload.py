@@ -109,15 +109,24 @@ def set_privacy(page: Page, privacy: str) -> None:
 
 def upload_one(page: Page, import_page_url: str, fit: Path, privacy: str, settle: float) -> None:
     """Upload one activity from the already-confirmed Completed activities page."""
+    started = time.monotonic()
+    def stage(name: str) -> None:
+        print(f"  {fit.name}: {name} ({time.monotonic() - started:.1f}s)")
     page.goto(import_page_url, wait_until="domcontentloaded")
+    stage("upload page ready")
     upload_file_input(page).set_input_files(str(fit.resolve()))
+    stage("FIT selected")
     if not choose_activity(page):
         raise RuntimeError("Komoot did not show the 'Import as Activity' step.")
+    stage("activity selected")
     if not click_first(page, NEXT, timeout=5000):
         raise RuntimeError("Komoot did not show the Next button after selecting 'Import as Activity'.")
+    stage("activity form ready")
     set_privacy(page, privacy)
+    stage(f"visibility set to {privacy}")
     if not click_first(page, FINAL_IMPORT, timeout=10000):
         raise RuntimeError("Komoot did not show the final Import Activity button.")
+    stage("import submitted")
     # The click has submitted the import. Keep a short buffer before opening
     # the next upload page, without waiting for the rendered activity map.
     page.wait_for_timeout(max(0, settle) * 1000)
