@@ -87,6 +87,19 @@ def choose_activity(page: Page) -> bool:
     return click_first(page, AS_ACTIVITY, timeout=10000)
 
 
+def open_upload_page(page: Page, url: str) -> None:
+    """Open Komoot's upload screen, tolerating transient network timeouts."""
+    for attempt in range(1, 4):
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            return
+        except PlaywrightTimeoutError:
+            if attempt == 3:
+                raise
+            print(f"  Upload page timed out; retrying ({attempt}/3)...")
+            page.wait_for_timeout(attempt * 1000)
+
+
 def set_privacy(page: Page, privacy: str) -> None:
     """Set activity visibility without disturbing Komoot's default private state."""
     body = page.locator("body").inner_text()
@@ -116,7 +129,7 @@ def upload_one(page: Page, import_page_url: str, fit: Path, privacy: str, settle
     started = time.monotonic()
     def stage(name: str) -> None:
         print(f"  {fit.name}: {name} ({time.monotonic() - started:.1f}s)")
-    page.goto(import_page_url, wait_until="domcontentloaded")
+    open_upload_page(page, import_page_url)
     stage("upload page ready")
     upload_file_input(page).set_input_files(str(fit.resolve()))
     stage("FIT selected")
@@ -192,7 +205,7 @@ def main() -> None:
                 input("Log in to Komoot in the browser, then press Enter here. ")
             import_page_url = args.import_url
             # Validate the page before sending any FIT data.
-            page.goto(import_page_url, wait_until="domcontentloaded")
+            open_upload_page(page, import_page_url)
             try:
                 upload_file_input(page)
             except PlaywrightTimeoutError:
