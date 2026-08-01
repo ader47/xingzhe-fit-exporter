@@ -46,16 +46,30 @@ def file_input(page: Page):
 
 
 def set_privacy(page: Page, privacy: str) -> None:
-    """Pick privacy, failing safely if the current Komoot dialog is unfamiliar."""
+    """Set activity visibility without disturbing Komoot's default private state."""
+    body = page.locator("body").inner_text()
+    # Komoot's default value is "Only you". There is no radio control until
+    # the user presses the fourth (visibility) Change button, so keep the
+    # default for private imports rather than treating it as an error.
+    if privacy == "private" and re.search(r"(visibility:\s*(only you|only me)|可见性.*(仅自己|私密))", body, re.I):
+        return
+    if privacy == "public" and re.search(r"(visibility:\s*(anyone|everyone|public)|可见性.*公开)", body, re.I):
+        return
+    changes = page.get_by_text(re.compile(r"^(change|更改)$", re.I), exact=True)
+    try:
+        # The visibility card is the last Change button on the import form.
+        changes.last.click(timeout=3000)
+    except PlaywrightTimeoutError as exc:
+        raise RuntimeError("Could not open Komoot's Activity visibility setting.") from exc
     desired = PUBLIC if privacy == "public" else PRIVATE
     for role in ("radio", "button"):
         try:
-            page.get_by_role(role, name=desired).first.click(timeout=2500)
+            page.get_by_role(role, name=desired).first.click(timeout=4000)
             return
         except PlaywrightTimeoutError:
             pass
     try:
-        page.get_by_text(desired, exact=False).first.click(timeout=2500)
+        page.get_by_text(desired, exact=False).first.click(timeout=4000)
     except PlaywrightTimeoutError as exc:
         raise RuntimeError(f"Could not find the Komoot {privacy!r} privacy control.") from exc
 
