@@ -147,8 +147,14 @@ def upload_one(page: Page, import_page_url: str, fit: Path, privacy: str, settle
     if not click_first(page, FINAL_IMPORT, timeout=10000):
         raise RuntimeError("Komoot did not show the final Import Activity button.")
     stage("import submitted")
-    # The click has submitted the import. Keep a short buffer before opening
-    # the next upload page, without waiting for the rendered activity map.
+    # Do not mark the FIT successful merely because the button accepted a
+    # click. Komoot confirms an import by navigating to its newly-created tour;
+    # navigating to the next upload page before that point can abort a request.
+    try:
+        page.wait_for_url(re.compile(r".*/tour/\d+"), timeout=30000)
+    except PlaywrightTimeoutError as exc:
+        raise RuntimeError("Komoot did not confirm the activity import within 30 seconds.") from exc
+    stage("import confirmed")
     page.wait_for_timeout(max(0, settle) * 1000)
 
 
