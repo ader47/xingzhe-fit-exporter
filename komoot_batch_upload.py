@@ -64,7 +64,11 @@ def upload_file_input(page: Page):
 def click_label(page: Page, pattern: re.Pattern[str], timeout: int = 5000) -> bool:
     """Click a Komoot label/card as soon as it becomes visible."""
     deadline = time.monotonic() + timeout / 1000
-    label = page.locator("label").filter(has_text=pattern)
+    # The visible public label is "Anyone Visible to anyone: ...", while the
+    # selector pattern is anchored to the short option name.  Labels need a
+    # contains-match rather than an exact-match.
+    label_pattern = re.compile(pattern.pattern.removeprefix("^").removesuffix("$"), pattern.flags)
+    label = page.locator("label").filter(has_text=label_pattern)
     while time.monotonic() < deadline:
         try:
             if label.count() and label.first.is_visible():
