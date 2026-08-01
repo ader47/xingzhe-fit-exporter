@@ -153,8 +153,6 @@ def main() -> None:
     args = parser.parse_args()
 
     files = sorted(args.folder.expanduser().glob("*.fit"))
-    if args.limit is not None:
-        files = files[:args.limit]
     if not files:
         parser.error(f"no .fit files found in {args.folder}")
     manifest = args.folder / "komoot-upload-manifest.jsonl"
@@ -168,6 +166,10 @@ def main() -> None:
             except (json.JSONDecodeError, KeyError):
                 continue
     files = [f for f in files if str(f) not in completed]
+    # Apply a testing limit only after completed files have been removed; this
+    # makes `--resume --limit 1` select the next pending activity.
+    if args.limit is not None:
+        files = files[:args.limit]
     if not files:
         print("All FIT files are already marked as uploaded.")
         return
