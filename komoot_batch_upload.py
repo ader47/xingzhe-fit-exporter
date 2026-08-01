@@ -179,6 +179,20 @@ def main() -> None:
     args = parser.parse_args()
 
     files = sorted(args.folder.expanduser().glob("*.fit"))
+    # Reconciliation output is generated from report.json.  Finder copies or
+    # old interrupted runs can leave extra " 2.fit" files in missing-fits;
+    # never upload those just because they happen to be in that directory.
+    report_path = args.folder.parent / "report.json"
+    if args.folder.name == "missing-fits" and report_path.exists():
+        try:
+            report = json.loads(report_path.read_text())
+            expected = {Path(row["fit"]).name for row in report.get("missing", [])}
+            stale_count = sum(file.name not in expected for file in files)
+            files = [file for file in files if file.name in expected]
+            if stale_count:
+                print(f"Ignoring {stale_count} stale FIT file(s) not listed in {report_path}.")
+        except (json.JSONDecodeError, KeyError, TypeError):
+            print(f"Warning: could not read {report_path}; using every FIT file in the folder.")
     if not files:
         parser.error(f"no .fit files found in {args.folder}")
     manifest = args.folder / "komoot-upload-manifest.jsonl"
