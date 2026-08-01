@@ -1,0 +1,14 @@
+# Activity exports and audit data
+all-activities/
+fit-upload/
+*.fit
+*.gpx
+*.stream.json
+batch-manifest.jsonl
+
+# Local signed-in browser profile
+.xingzhe-browser-profile/
+
+# Python caches
+__pycache__/
+*.py[cod]

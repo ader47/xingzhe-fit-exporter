@@ -1,0 +1,2 @@
+playwright>=1.50,<2
+garmin-fit-sdk>=21,<22
