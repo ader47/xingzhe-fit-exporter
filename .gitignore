@@ -10,6 +10,7 @@ batch-manifest.jsonl
 .xingzhe-browser-profile/
 .komoot-browser-profile/
 komoot-upload-manifest.jsonl
+.komoot-debug/
 
 # Python caches
 __pycache__/

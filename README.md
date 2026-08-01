@@ -62,3 +62,7 @@ python komoot_batch_upload.py --folder fit-upload --privacy private --resume
 
 The script stops at the first unfamiliar Komoot screen rather than continuing
 with an unknown privacy setting.
+
+If a test fails, it automatically writes a screenshot, page text, and a browser
+trace to `.komoot-debug/`. These diagnostic files are local-only and ignored by
+Git. Send the failure screenshot or text file to diagnose the changed Komoot UI.

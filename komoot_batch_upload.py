@@ -82,6 +82,8 @@ def main() -> None:
     parser.add_argument("--no-prompt", action="store_true")
     parser.add_argument("--import-url", default=KOMOOT_UPLOAD,
                         help="Komoot upload page (default: https://www.komoot.com/upload)")
+    parser.add_argument("--debug-dir", type=Path, default=Path(".komoot-debug"),
+                        help="local screenshots and trace for diagnosing an import failure")
     args = parser.parse_args()
 
     files = sorted(args.folder.expanduser().glob("*.fit"))
@@ -108,38 +110,49 @@ def main() -> None:
     print("Komoot will receive these activities. Review the setting before continuing.")
     with sync_playwright() as pw:
         browser = pw.chromium.launch_persistent_context(str(args.profile), headless=False)
-        page = browser.pages[0]
-        page.goto(KOMOOT, wait_until="domcontentloaded")
-        if not args.no_prompt:
-            input("Log in to Komoot in the browser, then press Enter here. ")
-        import_page_url = args.import_url
-        # Validate the page before sending any FIT data. This avoids mistaking
-        # Komoot's home page for an import form.
-        page.goto(import_page_url, wait_until="domcontentloaded")
-        if not click_first(page, IMPORT_LABEL):
-            try:
-                # On /upload Komoot may render the file input directly, without
-                # a separately labelled Import button.
-                file_input(page)
-            except PlaywrightTimeoutError:
-                browser.close()
-                raise RuntimeError("Komoot's upload page did not show an import control after login. "
-                                   "Confirm that you are signed in, then retry.")
-        for index, fit in enumerate(files, 1):
-            try:
-                upload_one(page, import_page_url, fit, args.privacy)
-                result = {"file": str(fit), "status": "ok", "privacy": args.privacy}
-                print(f"[{index}/{len(files)}] {fit.name}: imported")
-            except Exception as exc:
-                result = {"file": str(fit), "status": "error", "error": str(exc)}
-                print(f"[{index}/{len(files)}] {fit.name}: ERROR {exc}", file=sys.stderr)
+        args.debug_dir.mkdir(parents=True, exist_ok=True)
+        browser.tracing.start(screenshots=True, snapshots=True, sources=True)
+        try:
+            page = browser.pages[0]
+            page.goto(KOMOOT, wait_until="domcontentloaded")
+            if not args.no_prompt:
+                input("Log in to Komoot in the browser, then press Enter here. ")
+            import_page_url = args.import_url
+            # Validate the page before sending any FIT data. This avoids mistaking
+            # Komoot's home page for an import form.
+            page.goto(import_page_url, wait_until="domcontentloaded")
+            if not click_first(page, IMPORT_LABEL):
+                try:
+                    # On /upload Komoot may render the file input directly, without
+                    # a separately labelled Import button.
+                    file_input(page)
+                except PlaywrightTimeoutError:
+                    raise RuntimeError("Komoot's upload page did not show an import control after login. "
+                                       "Confirm that you are signed in, then retry.")
+            for index, fit in enumerate(files, 1):
+                try:
+                    upload_one(page, import_page_url, fit, args.privacy)
+                    result = {"file": str(fit), "status": "ok", "privacy": args.privacy}
+                    print(f"[{index}/{len(files)}] {fit.name}: imported")
+                except Exception as exc:
+                    stamp = time.strftime("%Y%m%d-%H%M%S")
+                    screenshot = args.debug_dir / f"failure-{stamp}.png"
+                    details = args.debug_dir / f"failure-{stamp}.txt"
+                    page.screenshot(path=str(screenshot), full_page=True)
+                    details.write_text(f"URL: {page.url}\n\n{page.locator('body').inner_text()}")
+                    result = {"file": str(fit), "status": "error", "error": str(exc),
+                              "screenshot": str(screenshot), "details": str(details)}
+                    print(f"[{index}/{len(files)}] {fit.name}: ERROR {exc}", file=sys.stderr)
+                    print(f"Saved diagnostic files in {args.debug_dir}", file=sys.stderr)
+                    with manifest.open("a") as output:
+                        output.write(json.dumps(result, ensure_ascii=False) + "\n")
+                    break
                 with manifest.open("a") as output:
                     output.write(json.dumps(result, ensure_ascii=False) + "\n")
-                break
-            with manifest.open("a") as output:
-                output.write(json.dumps(result, ensure_ascii=False) + "\n")
-            time.sleep(max(0, args.delay))
-        browser.close()
+                time.sleep(max(0, args.delay))
+        finally:
+            browser.tracing.stop(path=str(args.debug_dir / "komoot-upload-trace.zip"))
+            browser.close()
 
 
 if __name__ == "__main__":
