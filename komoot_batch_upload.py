@@ -74,7 +74,7 @@ def set_privacy(page: Page, privacy: str) -> None:
         raise RuntimeError(f"Could not find the Komoot {privacy!r} privacy control.") from exc
 
 
-def upload_one(page: Page, import_page_url: str, fit: Path, privacy: str) -> None:
+def upload_one(page: Page, import_page_url: str, fit: Path, privacy: str, settle: float) -> None:
     """Upload one activity from the already-confirmed Completed activities page."""
     page.goto(import_page_url, wait_until="domcontentloaded")
     if not click_first(page, IMPORT_LABEL):
@@ -91,7 +91,9 @@ def upload_one(page: Page, import_page_url: str, fit: Path, privacy: str) -> Non
     set_privacy(page, privacy)
     if not click_first(page, FINAL_IMPORT, timeout=10000):
         raise RuntimeError("Komoot did not show the final Import Activity button.")
-    page.wait_for_timeout(1200)
+    # The click has submitted the import. Keep a short buffer before opening
+    # the next upload page, without waiting for the rendered activity map.
+    page.wait_for_timeout(max(0, settle) * 1000)
 
 
 def main() -> None:
@@ -99,8 +101,10 @@ def main() -> None:
     parser.add_argument("--folder", type=Path, default=Path("fit-upload"))
     parser.add_argument("--privacy", choices=("private", "public"), default="private")
     parser.add_argument("--profile", type=Path, default=Path(".komoot-browser-profile"))
-    parser.add_argument("--delay", type=float, default=0.25,
-                        help="seconds between imports (default: 0.25)")
+    parser.add_argument("--delay", type=float, default=0.0,
+                        help="seconds between imports (default: 0)")
+    parser.add_argument("--settle", type=float, default=0.3,
+                        help="seconds after clicking Import Activity (default: 0.3)")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--no-prompt", action="store_true")
@@ -144,6 +148,14 @@ def main() -> None:
             page.goto(KOMOOT, wait_until="domcontentloaded")
             if not args.no_prompt:
                 input("Log in to Komoot in the browser, then press Enter here. ")
+            # Importing does not need map imagery.  Blocking cosmetic assets
+            # after login avoids reloading a large map on every activity.
+            def block_cosmetic_assets(route):
+                if route.request.resource_type in {"image", "media", "font"}:
+                    route.abort()
+                else:
+                    route.continue_()
+            browser.route("**/*", block_cosmetic_assets)
             import_page_url = args.import_url
             # Validate the page before sending any FIT data. This avoids mistaking
             # Komoot's home page for an import form.
@@ -158,7 +170,7 @@ def main() -> None:
                                        "Confirm that you are signed in, then retry.")
             for index, fit in enumerate(files, 1):
                 try:
-                    upload_one(page, import_page_url, fit, args.privacy)
+                    upload_one(page, import_page_url, fit, args.privacy, args.settle)
                     result = {"file": str(fit), "status": "ok", "privacy": args.privacy}
                     print(f"[{index}/{len(files)}] {fit.name}: imported")
                 except Exception as exc:
