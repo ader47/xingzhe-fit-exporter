@@ -88,15 +88,18 @@ def choose_activity(page: Page) -> bool:
 
 
 def open_upload_page(page: Page, url: str) -> None:
-    """Open Komoot's upload screen, tolerating transient network timeouts."""
+    """Open a usable upload screen, retrying timeouts and stalled spinners."""
     for attempt in range(1, 4):
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            # A page can reach DOMContentLoaded while Komoot's app is still
+            # spinning. The hidden file input is the reliable ready signal.
+            file_input(page, timeout=3000)
             return
         except PlaywrightTimeoutError:
             if attempt == 3:
                 raise
-            print(f"  Upload page timed out; retrying ({attempt}/3)...")
+            print(f"  Upload page stalled or timed out; refreshing ({attempt}/3)...")
             page.wait_for_timeout(attempt * 1000)
 
 
