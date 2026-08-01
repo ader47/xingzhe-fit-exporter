@@ -11,6 +11,8 @@ batch-manifest.jsonl
 .komoot-browser-profile/
 komoot-upload-manifest.jsonl
 .komoot-debug/
+.komoot-manual-recording.jsonl
+.komoot-manual-recording.png
 
 # Python caches
 __pycache__/

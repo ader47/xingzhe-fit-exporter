@@ -72,3 +72,17 @@ Add `--debug` only when deeper diagnosis is needed; it records a full browser
 trace and is substantially slower. These diagnostic files are local-only and
 ignored by Git. Send the failure screenshot or text file to diagnose the
 changed Komoot UI.
+
+## Record one manual upload flow
+
+If Komoot changes its UI, record one manual test import before changing the
+uploader again:
+
+```bash
+python komoot_record_manual_flow.py
+```
+
+Log in and manually import one FIT file in the opened browser, then press Enter
+in the terminal. It writes `.komoot-manual-recording.jsonl` and a final
+screenshot locally. The log includes only clicked control labels and page URLs;
+it does not capture typed text, passwords, cookies, headers, or file contents.
