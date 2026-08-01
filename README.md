@@ -86,3 +86,23 @@ Log in and manually import one FIT file in the opened browser, then press Enter
 in the terminal. It writes `.komoot-manual-recording.jsonl` and a final
 screenshot locally. The log includes only clicked control labels and page URLs;
 it does not capture typed text, passwords, cookies, headers, or file contents.
+
+## Reconcile a partial upload
+
+If an earlier version of the uploader marked files successful before Komoot had
+created the activity, reconcile before uploading again. Open your Komoot profile
+in a browser and copy the numeric ID from `komoot.com/user/USER_ID`, then run:
+
+```bash
+python komoot_reconcile.py --user-id USER_ID
+```
+
+After you log in, this reads your completed activities and matches their start
+times to the local GPX exports. It writes a report and copies only missing FIT
+files to `komoot-reconciliation/missing-fits/`. It does not change anything in
+Komoot. Upload that folder using the normal uploader only after checking the
+reported counts:
+
+```bash
+python komoot_batch_upload.py --folder komoot-reconciliation/missing-fits --privacy public --settle 0
+```

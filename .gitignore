@@ -13,6 +13,7 @@ komoot-upload-manifest.jsonl
 .komoot-debug/
 .komoot-manual-recording.jsonl
 .komoot-manual-recording.png
+komoot-reconciliation/
 
 # Python caches
 __pycache__/
