@@ -50,8 +50,9 @@ def set_privacy(page: Page, privacy: str) -> None:
         raise RuntimeError(f"Could not find the Komoot {privacy!r} privacy control.") from exc
 
 
-def upload_one(page: Page, fit: Path, privacy: str) -> None:
-    page.goto(KOMOOT, wait_until="domcontentloaded")
+def upload_one(page: Page, import_page_url: str, fit: Path, privacy: str) -> None:
+    """Upload one activity from the already-confirmed Completed activities page."""
+    page.goto(import_page_url, wait_until="domcontentloaded")
     if not click_first(page, IMPORT_LABEL):
         try:
             file_input(page)
@@ -76,6 +77,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--no-prompt", action="store_true")
+    parser.add_argument("--import-url", help="your Komoot Completed activities page URL; useful with --no-prompt")
     args = parser.parse_args()
 
     files = sorted(args.folder.expanduser().glob("*.fit"))
@@ -105,10 +107,18 @@ def main() -> None:
         page = browser.pages[0]
         page.goto(KOMOOT, wait_until="domcontentloaded")
         if not args.no_prompt:
-            input("Log in to Komoot in the browser, then press Enter here to begin importing. ")
+            input("Log in, open Profile > Completed activities, then press Enter here. ")
+        import_page_url = args.import_url or page.url
+        # Validate the page before sending any FIT data. This avoids mistaking
+        # Komoot's home page for an import form.
+        page.goto(import_page_url, wait_until="domcontentloaded")
+        if not click_first(page, IMPORT_LABEL):
+            browser.close()
+            raise RuntimeError("Open Profile > Completed activities in the browser, then press Enter. "
+                               "The current page does not contain 'Import a GPS file'.")
         for index, fit in enumerate(files, 1):
             try:
-                upload_one(page, fit, args.privacy)
+                upload_one(page, import_page_url, fit, args.privacy)
                 result = {"file": str(fit), "status": "ok", "privacy": args.privacy}
                 print(f"[{index}/{len(files)}] {fit.name}: imported")
             except Exception as exc:

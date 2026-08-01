@@ -50,10 +50,12 @@ cd /Users/liufeng/Documents/Codex/2026-08-02/realtime-voice-chat/outputs/xingzhe
 python komoot_batch_upload.py --folder fit-upload --privacy private --limit 1
 ```
 
-Remove `--limit 1` after the test. For public activities, replace `private`
-with `public`. The command asks you to log in in the opened browser and waits
-for Enter before it begins sending files. It saves `komoot-upload-manifest.jsonl`
-in the FIT folder. If an upload stops, continue without repeating successes:
+The opened browser starts on Komoot's home page. Log in, then manually open
+**Profile → Completed activities** before pressing Enter in the terminal. This
+gives the script the correct account-specific import page to reuse. Remove
+`--limit 1` after the test. For public activities, replace `private` with
+`public`. It saves `komoot-upload-manifest.jsonl` in the FIT folder. If an
+upload stops, continue without repeating successes:
 
 ```bash
 python komoot_batch_upload.py --folder fit-upload --privacy private --resume
