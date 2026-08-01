@@ -60,9 +60,15 @@ folder. If an upload stops, continue without repeating successes:
 python komoot_batch_upload.py --folder fit-upload --privacy private --resume
 ```
 
+The normal uploader has only a 0.25-second gap between activities. Use
+`--delay 0` if you want no added gap; Komoot still needs time to process each
+FIT file on its servers.
+
 The script stops at the first unfamiliar Komoot screen rather than continuing
 with an unknown privacy setting.
 
-If a test fails, it automatically writes a screenshot, page text, and a browser
-trace to `.komoot-debug/`. These diagnostic files are local-only and ignored by
-Git. Send the failure screenshot or text file to diagnose the changed Komoot UI.
+If a test fails, it writes a screenshot and page text to `.komoot-debug/`.
+Add `--debug` only when deeper diagnosis is needed; it records a full browser
+trace and is substantially slower. These diagnostic files are local-only and
+ignored by Git. Send the failure screenshot or text file to diagnose the
+changed Komoot UI.

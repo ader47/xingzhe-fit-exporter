@@ -99,7 +99,8 @@ def main() -> None:
     parser.add_argument("--folder", type=Path, default=Path("fit-upload"))
     parser.add_argument("--privacy", choices=("private", "public"), default="private")
     parser.add_argument("--profile", type=Path, default=Path(".komoot-browser-profile"))
-    parser.add_argument("--delay", type=float, default=2.0)
+    parser.add_argument("--delay", type=float, default=0.25,
+                        help="seconds between imports (default: 0.25)")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--no-prompt", action="store_true")
@@ -107,6 +108,8 @@ def main() -> None:
                         help="Komoot upload page (default: https://www.komoot.com/upload)")
     parser.add_argument("--debug-dir", type=Path, default=Path(".komoot-debug"),
                         help="local screenshots and trace for diagnosing an import failure")
+    parser.add_argument("--debug", action="store_true",
+                        help="record a full Playwright trace (slow; use only when diagnosing failures)")
     args = parser.parse_args()
 
     files = sorted(args.folder.expanduser().glob("*.fit"))
@@ -134,7 +137,8 @@ def main() -> None:
     with sync_playwright() as pw:
         browser = pw.chromium.launch_persistent_context(str(args.profile), headless=False)
         args.debug_dir.mkdir(parents=True, exist_ok=True)
-        browser.tracing.start(screenshots=True, snapshots=True, sources=True)
+        if args.debug:
+            browser.tracing.start(screenshots=True, snapshots=True, sources=True)
         try:
             page = browser.pages[0]
             page.goto(KOMOOT, wait_until="domcontentloaded")
@@ -174,7 +178,8 @@ def main() -> None:
                     output.write(json.dumps(result, ensure_ascii=False) + "\n")
                 time.sleep(max(0, args.delay))
         finally:
-            browser.tracing.stop(path=str(args.debug_dir / "komoot-upload-trace.zip"))
+            if args.debug:
+                browser.tracing.stop(path=str(args.debug_dir / "komoot-upload-trace.zip"))
             browser.close()
 
 
