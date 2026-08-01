@@ -17,9 +17,10 @@ KOMOOT_UPLOAD = "https://www.komoot.com/upload"
 # some layouts; the older layout says "Import a GPS file".
 IMPORT_LABEL = re.compile(r"^(import|导入)$|(import.*gps|gps.*import|导入.*gps|导入.*文件)", re.I)
 AS_ACTIVITY = re.compile(r"(import as activity|作为活动导入|导入为活动)", re.I)
+NEXT = re.compile(r"^(next|下一步)$", re.I)
 FINAL_IMPORT = re.compile(r"^(import activity|import|导入活动|导入)$", re.I)
-PUBLIC = re.compile(r"^(public|everyone|公开|所有人可见)$", re.I)
-PRIVATE = re.compile(r"^(private|only me|仅自己|私密)$", re.I)
+PUBLIC = re.compile(r"^(public|everyone|anyone|公开|所有人可见)$", re.I)
+PRIVATE = re.compile(r"^(private|only me|only you|仅自己|私密)$", re.I)
 
 
 def click_first(page: Page, pattern: re.Pattern[str], timeout: int = 5000) -> bool:
@@ -29,6 +30,12 @@ def click_first(page: Page, pattern: re.Pattern[str], timeout: int = 5000) -> bo
             return True
         except PlaywrightTimeoutError:
             pass
+    # Import choices are cards in Komoot's current UI, without button roles.
+    try:
+        page.get_by_text(pattern, exact=True).first.click(timeout=timeout)
+        return True
+    except PlaywrightTimeoutError:
+        pass
     return False
 
 
@@ -65,6 +72,8 @@ def upload_one(page: Page, import_page_url: str, fit: Path, privacy: str) -> Non
     file_input(page).set_input_files(str(fit.resolve()))
     if not click_first(page, AS_ACTIVITY, timeout=10000):
         raise RuntimeError("Komoot did not show the 'Import as Activity' step.")
+    if not click_first(page, NEXT, timeout=5000):
+        raise RuntimeError("Komoot did not show the Next button after selecting 'Import as Activity'.")
     set_privacy(page, privacy)
     if not click_first(page, FINAL_IMPORT, timeout=10000):
         raise RuntimeError("Komoot did not show the final Import Activity button.")
