@@ -8,6 +8,8 @@ batch-manifest.jsonl
 
 # Local signed-in browser profile
 .xingzhe-browser-profile/
+.komoot-browser-profile/
+komoot-upload-manifest.jsonl
 
 # Python caches
 __pycache__/

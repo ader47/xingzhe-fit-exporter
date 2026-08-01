@@ -2,12 +2,12 @@
 
 Exports one Xingzhe activity automatically after you log in in the browser window it opens. It saves the original GPX, the raw speed-stream response, and a generated FIT file for auditing.
 
-## Install
+## Install (your Anaconda base environment)
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/playwright install chromium
+conda activate base
+pip install -r requirements.txt
+playwright install chromium
 ```
 
 ## Run
@@ -15,7 +15,7 @@ python3 -m venv .venv
 Open a Xingzhe activity page; its final numeric URL component is the ride ID. Then run:
 
 ```bash
-.venv/bin/python xingzhe_to_fit.py RIDE_ID --out fit-output
+python xingzhe_to_fit.py RIDE_ID --out fit-output
 ```
 
 Log in yourself in the browser window. The app never asks for or stores a password. Review the produced `.fit` alongside its `.gpx` and `.stream.json` in a FIT viewer before importing it elsewhere.
@@ -25,7 +25,7 @@ Log in yourself in the browser window. The app never asks for or stores a passwo
 To export the whole signed-in account, use batch mode:
 
 ```bash
-.venv/bin/python xingzhe_to_fit.py --all --out all-activities
+python xingzhe_to_fit.py --all --out all-activities
 ```
 
 Each activity is stored in its own `all-activities/ACTIVITY_ID/` folder. `batch-manifest.jsonl` records successes and errors. Re-running the same command skips completed FIT files; add `--overwrite` to recreate them.
@@ -34,6 +34,30 @@ If the saved browser profile is already signed in, add `--no-prompt` when runnin
 
 
 
-## Current scope
+## Import all FIT files into Komoot
 
-The exporter implements a single activity first, intentionally: this lets you validate timestamp, speed, and elevation mapping before a bulk export is added.
+Komoot's website imports completed activities one file at a time. This script
+drives that normal web flow in sequence: it opens a browser, you log in
+yourself, and it uploads every `.fit` file from one folder. Passwords are never
+read or stored by the script.
+
+Start with **private** visibility (recommended), verify a few imports, then use
+public only if you want every route and its location history visible to anyone:
+
+```bash
+conda activate base
+cd /Users/liufeng/Documents/Codex/2026-08-02/realtime-voice-chat/outputs/xingzhe-fit-exporter
+python komoot_batch_upload.py --folder fit-upload --privacy private --limit 1
+```
+
+Remove `--limit 1` after the test. For public activities, replace `private`
+with `public`. The command asks you to log in in the opened browser and waits
+for Enter before it begins sending files. It saves `komoot-upload-manifest.jsonl`
+in the FIT folder. If an upload stops, continue without repeating successes:
+
+```bash
+python komoot_batch_upload.py --folder fit-upload --privacy private --resume
+```
+
+The script stops at the first unfamiliar Komoot screen rather than continuing
+with an unknown privacy setting.
