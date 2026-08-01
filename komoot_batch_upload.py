@@ -117,9 +117,14 @@ def main() -> None:
         # Komoot's home page for an import form.
         page.goto(import_page_url, wait_until="domcontentloaded")
         if not click_first(page, IMPORT_LABEL):
-            browser.close()
-            raise RuntimeError("Komoot's upload page did not show an import control after login. "
-                               "Confirm that you are signed in, then retry.")
+            try:
+                # On /upload Komoot may render the file input directly, without
+                # a separately labelled Import button.
+                file_input(page)
+            except PlaywrightTimeoutError:
+                browser.close()
+                raise RuntimeError("Komoot's upload page did not show an import control after login. "
+                                   "Confirm that you are signed in, then retry.")
         for index, fit in enumerate(files, 1):
             try:
                 upload_one(page, import_page_url, fit, args.privacy)
