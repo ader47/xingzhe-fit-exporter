@@ -98,8 +98,9 @@ python komoot_reconcile.py --user-id USER_ID
 ```
 
 After you log in, this reads your Komoot tour history and matches completed
-activities by their start times against the local GPX exports. It writes a
-report and copies only missing FIT files to
+activities against the local GPX exports by their recorded start point and
+distance. (Komoot records the import time rather than the original activity
+time for imported FIT files.) It writes a report and copies only missing FIT files to
 `komoot-reconciliation/missing-fits/`. That folder is refreshed on every run,
 so it never retains stale results. It does not change anything in Komoot.
 Upload that folder using the normal uploader only after checking the reported

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,6 +37,33 @@ def gpx_start(path: Path) -> datetime | None:
     return parse_time(value)
 
 
+def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two WGS-84 points."""
+    radius = 6_371_000.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    return 2 * radius * math.asin(math.sqrt(a))
+
+
+def gpx_signature(path: Path) -> dict | None:
+    """Return start/end and recorded-track distance for one GPX file."""
+    root = ET.parse(path).getroot()
+    points = root.findall(".//{*}trkpt")
+    if not points:
+        return None
+    try:
+        coords = [(float(point.attrib["lat"]), float(point.attrib["lon"])) for point in points]
+    except (KeyError, ValueError):
+        return None
+    distance = sum(
+        haversine_meters(lat1, lon1, lat2, lon2)
+        for (lat1, lon1), (lat2, lon2) in zip(coords, coords[1:])
+    )
+    return {"start": coords[0], "end": coords[-1], "distance": distance}
+
+
 def tours_from(payload: object) -> list[dict]:
     if not isinstance(payload, dict):
         return []
@@ -55,6 +83,34 @@ def tour_start(tour: dict) -> datetime | None:
         if result:
             return result
     return None
+
+
+def route_candidates(signature: dict, tours: list[dict]) -> list[tuple[float, int]]:
+    """Find Komoot tours that plausibly describe this recorded GPX route.
+
+    Komoot assigns a newly-imported activity its import time in ``date``.  The
+    durable comparison fields on the activity-list endpoint are the start
+    coordinate and total distance, so use both and retain only tight matches.
+    """
+    start_lat, start_lon = signature["start"]
+    local_distance = signature["distance"]
+    candidates: list[tuple[float, int]] = []
+    for index, tour in enumerate(tours):
+        point = tour.get("start_point")
+        remote_distance = tour.get("distance")
+        if not isinstance(point, dict) or not isinstance(remote_distance, (int, float)):
+            continue
+        try:
+            start_gap = haversine_meters(start_lat, start_lon, float(point["lat"]), float(point["lng"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        distance_gap = abs(local_distance - remote_distance)
+        # A GPS point can drift slightly and Komoot may simplify the line, but
+        # larger differences are ambiguous rather than safe matches.
+        if start_gap <= 250 and distance_gap <= max(250, local_distance * 0.03):
+            score = start_gap + distance_gap
+            candidates.append((score, index))
+    return sorted(candidates)
 
 
 def main() -> None:
@@ -99,26 +155,28 @@ def main() -> None:
                 break
         browser.close()
 
-    starts: list[datetime] = []
-    for tour in tours:
-        start = tour_start(tour)
-        if start:
-            starts.append(start)
+    # Imported activities receive Komoot's import date, not the original ride
+    # date.  Reserve matching tours as we go so a single remote activity cannot
+    # incorrectly satisfy two local files.
     missing, matched, unknown = [], [], []
+    used_tours: set[int] = set()
     for fit in fits:
         ride_id = fit.stem
         gpx = args.source_folder / ride_id / f"{ride_id}.gpx"
         if not gpx.exists():
             unknown.append({"fit": str(fit), "reason": "matching GPX not found"})
             continue
-        start = gpx_start(gpx)
-        if start is None:
-            unknown.append({"fit": str(fit), "reason": "GPX has no start time"})
+        signature = gpx_signature(gpx)
+        if signature is None:
+            unknown.append({"fit": str(fit), "reason": "GPX has no usable track points"})
             continue
-        if any(abs((start - remote).total_seconds()) <= args.tolerance for remote in starts):
-            matched.append({"fit": str(fit), "start": start.isoformat()})
+        candidates = [(score, index) for score, index in route_candidates(signature, tours) if index not in used_tours]
+        if candidates:
+            score, index = candidates[0]
+            used_tours.add(index)
+            matched.append({"fit": str(fit), "tour_id": tours[index].get("id"), "score_m": round(score, 1)})
         else:
-            missing.append({"fit": str(fit), "start": start.isoformat()})
+            missing.append({"fit": str(fit), "distance_m": round(signature["distance"], 1)})
 
     # Keep the generated upload folder an exact reflection of this run.  A
     # previous report may have contained files that are no longer missing.
