@@ -156,14 +156,6 @@ def main() -> None:
             page.goto(KOMOOT, wait_until="domcontentloaded")
             if not args.no_prompt:
                 input("Log in to Komoot in the browser, then press Enter here. ")
-            # Importing does not need map imagery.  Blocking cosmetic assets
-            # after login avoids reloading a large map on every activity.
-            def block_cosmetic_assets(route):
-                if route.request.resource_type in {"image", "media", "font"}:
-                    route.abort()
-                else:
-                    route.continue_()
-            browser.route("**/*", block_cosmetic_assets)
             import_page_url = args.import_url
             # Validate the page before sending any FIT data. This avoids mistaking
             # Komoot's home page for an import form.

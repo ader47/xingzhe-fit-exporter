@@ -60,10 +60,9 @@ folder. If an upload stops, continue without repeating successes:
 python komoot_batch_upload.py --folder fit-upload --privacy private --resume
 ```
 
-The normal uploader adds no deliberate gap, waits only 0.3 seconds after
-clicking Import Activity, and blocks map imagery after you log in. Komoot still
-needs time to process each FIT file on its servers; that server-side time cannot
-be bypassed safely.
+The normal uploader adds no deliberate gap and waits only 0.3 seconds after
+clicking Import Activity. Komoot still needs time to process each FIT file on
+its servers; that server-side time cannot be bypassed safely.
 
 The script stops at the first unfamiliar Komoot screen rather than continuing
 with an unknown privacy setting.
